@@ -97,7 +97,7 @@ fn main() -> io::Result<()> {
     }
 
     let monkey_ids: Vec<i32> = monkeys.keys().map(|x| x.clone()).collect();
-    for _ in 0..1000 {
+    for _ in 0..10000 {
         for id in &monkey_ids {
             let mut moved_items = HashMap::<i32, Vec<BigUint>>::new();
             {
