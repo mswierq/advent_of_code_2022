@@ -1,144 +1,138 @@
-use std::default::Default;
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
-use std::ops::{Add, Div};
 use std::{fs::File, io};
 
-#[derive(Clone, Copy, Default, PartialEq)]
-struct Point {
-    x: usize,
-    y: usize,
+struct Graph {
+    nodes: Vec<Vec<usize>>,
+    start: usize,
+    destination: usize,
+    distances: Vec<usize>,
 }
 
-impl Point {
-    fn new(x: usize, y: usize) -> Self {
-        Self { x, y }
-    }
-}
-
-impl Add for Point {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
-    }
-}
-
-impl Div for Point {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        Self {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-
-struct HeightMap {
-    map: Vec<Vec<char>>,
-    start: Point,
-    destination: Point,
-    n_cols: usize,
-    n_rows: usize,
-}
-
-impl HeightMap {
-    fn new(map: Vec<Vec<char>>) -> Self {
-        let mut start = Point::default();
-        let mut destination = Point::default();
-        for (row_idx, row) in map.iter().enumerate() {
-            for (col_idx, square) in row.iter().enumerate() {
-                if *square == 'S' {
-                    start = Point::new(col_idx, row_idx);
-                }
-                if *square == 'E' {
-                    destination = Point::new(col_idx, row_idx);
-                }
-            }
-        }
-        let n_cols = map[0].len();
-        let n_rows = map.len();
-        Self {
-            map,
-            start,
-            destination,
-            n_cols,
-            n_rows,
-        }
-    }
-
-    fn get_height(&self, point: &Point) -> i16 {
-        let symbol = self.map[point.y][point.x];
-        if symbol == 'S' {
-            return 'a' as i16;
-        }
-        if symbol == 'E' {
-            return 'z' as i16;
-        }
-        return symbol as i16;
-    }
-}
-
-fn climb(height_map: &HeightMap, current_point: Point, previous_point: Point) -> usize {
-    if current_point == height_map.destination {
+fn calc_height(field: char) -> i32 {
+    if field == 'S' {
         return 0;
     }
-    let current_height = height_map.get_height(&current_point);
-    let go_right_steps = {
-        if current_point.x < height_map.n_cols {
-            let next_point = Point::new(current_point.x + 1, current_point.y);
-            if height_map.get_height(&next_point) - current_height <= 1
-                && next_point != previous_point
-            {
-                return climb(height_map, next_point, current_point);
+    if field == 'E' {
+        return 'z' as i32 - 'a' as i32;
+    }
+    return field as i32 - 'a' as i32;
+}
+
+impl Graph {
+    fn new(height_map: Vec<Vec<char>>) -> Self {
+        let n_rows = height_map.len();
+        let n_cols = height_map
+            .first()
+            .expect("Expected at least one row!")
+            .len();
+        let mut nodes = vec![vec![]; n_rows * n_cols];
+        let distances = vec![0; n_rows * n_cols];
+
+        let mut start = 0;
+        let mut destination = 0;
+
+        for (row_idx, row) in height_map.iter().enumerate() {
+            for (col_idx, field) in row.iter().enumerate() {
+                let field_idx = row_idx * n_cols + col_idx;
+                if *field == 'S' {
+                    start = field_idx;
+                }
+                if *field == 'E' {
+                    destination = field_idx;
+                }
+                let field_height = calc_height(*field);
+
+                if row_idx > 0 {
+                    //up
+                    let next_field = height_map[row_idx - 1][col_idx];
+                    let height_diff = calc_height(next_field) - field_height;
+                    if height_diff.abs() <= 1 {
+                        let next_field_idx = (row_idx - 1) * n_cols + col_idx;
+                        nodes[field_idx].push(next_field_idx);
+                    }
+                }
+
+                if row_idx < (n_rows - 1) {
+                    //down
+                    let next_field = height_map[row_idx + 1][col_idx];
+                    let height_diff = calc_height(next_field) - field_height;
+                    if height_diff.abs() <= 1 {
+                        let next_field_idx = (row_idx + 1) * n_cols + col_idx;
+                        nodes[field_idx].push(next_field_idx);
+                    }
+                }
+
+                if col_idx > 0 {
+                    //left
+                    let next_field = height_map[row_idx][col_idx - 1];
+                    let height_diff = calc_height(next_field) - field_height;
+                    if height_diff.abs() <= 1 {
+                        let next_field_idx = row_idx * n_cols + col_idx - 1;
+                        nodes[field_idx].push(next_field_idx);
+                    }
+                }
+
+                if col_idx < (n_cols - 1) {
+                    //right
+                    let next_field = height_map[row_idx][col_idx + 1];
+                    let height_diff = calc_height(next_field) - field_height;
+                    if height_diff.abs() <= 1 {
+                        let next_field_idx = row_idx * n_cols + col_idx + 1;
+                        nodes[field_idx].push(next_field_idx);
+                    }
+                }
             }
         }
-        usize::MAX
-    };
 
-    let go_left_steps = {
-        if current_point.x > 0 {
-            let next_point = Point::new(current_point.x - 1, current_point.y);
-            if height_map.get_height(&next_point) - current_height <= 1
-                && next_point != previous_point
-            {
-                return climb(height_map, next_point, current_point);
+        Self {
+            nodes,
+            start,
+            destination,
+            distances,
+        }
+    }
+
+    fn find_shortest_path(&mut self) -> usize {
+        let mut queue = VecDeque::new();
+        queue.push_back(self.start);
+
+        let mut visited = vec![false; self.nodes.len()];
+        visited[self.start] = true;
+
+        while !queue.is_empty() {
+            let node_idx = queue.pop_front().unwrap();
+            for next_node in &self.nodes[node_idx] {
+                if !visited[*next_node] {
+                    visited[*next_node] = true;
+                    self.distances[*next_node] = self.distances[node_idx] + 1;
+                    queue.push_back(*next_node);
+
+                    if *next_node == self.destination {
+                        return self.distances[self.destination];
+                    }
+                }
             }
         }
-        usize::MAX
-    };
 
-    let go_up_steps = {
-        if current_point.y > 0 {
-            let next_point = Point::new(current_point.x, current_point.y - 1);
-            if height_map.get_height(&next_point) - current_height <= 1
-                && next_point != previous_point
-            {
-                return climb(height_map, next_point, current_point);
+        let mut visited_map = vec![vec!['.'; 171]; 41];
+        for (i, v) in visited.iter().enumerate() {
+            let row = i / 171;
+            let col = i % 171;
+            if *v {
+                visited_map[row][col] = '#';
             }
         }
-        usize::MAX
-    };
 
-    let go_down_steps = {
-        if current_point.y < height_map.n_rows {
-            let next_point = Point::new(current_point.x, current_point.y + 1);
-            if height_map.get_height(&next_point) - current_height <= 1
-                && next_point != previous_point
-            {
-                return climb(height_map, next_point, current_point);
-            }
+        visited_map[self.start / 171][self.start % 171] = 'S';
+        visited_map[self.destination / 171][self.destination % 171] = 'E';
+
+        for row in visited_map {
+            println!("{}", row.iter().collect::<String>());
         }
-        usize::MAX
-    };
 
-    go_right_steps
-        .min(go_left_steps)
-        .min(go_up_steps)
-        .min(go_down_steps)
+        0
+    }
 }
 
 fn main() -> io::Result<()> {
@@ -146,16 +140,13 @@ fn main() -> io::Result<()> {
     let file = File::open(input_path)?;
     let reader = BufReader::new(file);
 
-    let map: Vec<_> = reader
+    let height_map = reader
         .lines()
-        .map(|line| line.unwrap().chars().collect::<Vec<char>>())
-        .collect();
+        .map(|row| row.unwrap().chars().collect::<Vec<char>>())
+        .collect::<Vec<_>>();
+    let mut graph = Graph::new(height_map);
 
-    let height_map = HeightMap::new(map);
-
-    let n_steps = climb(&height_map, height_map.start, height_map.start);
-
-    println!("N steps are needed: {}", n_steps);
+    println!("Shortest path is {} length", graph.find_shortest_path());
 
     Ok(())
 }

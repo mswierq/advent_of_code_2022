@@ -1,5 +1,4 @@
-use num_bigint::BigUint;
-use num_traits::identities::Zero;
+use rug::Integer;
 use std::collections::{BTreeMap, HashMap};
 use std::error;
 use std::io::{BufRead, BufReader};
@@ -7,9 +6,9 @@ use std::str::FromStr;
 use std::{fs::File, io};
 
 struct Monkey {
-    items: Vec<BigUint>,
-    operation: Box<dyn Fn(&BigUint) -> BigUint>,
-    test: Box<dyn Fn(&BigUint) -> i32>,
+    items: Vec<Integer>,
+    operation: Box<dyn Fn(&Integer) -> Integer>,
+    test: Box<dyn Fn(&Integer) -> i32>,
     inspected_counter: u64,
 }
 
@@ -19,31 +18,32 @@ impl FromStr for Monkey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut split = s.split(";");
 
-        let items: Vec<BigUint> = split.next().expect("Expected items list!")[16..]
+        let items: Vec<Integer> = split.next().expect("Expected items list!")[16..]
             .split(", ")
-            .map(|item| BigUint::from_str(item).expect("Couldn't parse single item"))
+            .map(|item| Integer::from_str(item).expect("Couldn't parse single item"))
             .collect();
 
         let mut op_split = split.next().expect("Wrong operation format!")[21..].split(" ");
-        let operator: fn(&BigUint, &BigUint) -> BigUint =
+        let operator: fn(&Integer, &Integer) -> Integer =
             match op_split.next().expect("Expected to get an operator!") {
-                "+" => |x: &BigUint, y: &BigUint| x + y,
-                "*" => |x: &BigUint, y: &BigUint| x * y,
+                "+" => |x: &Integer, y: &Integer| Integer::from(x + y),
+                "*" => |x: &Integer, y: &Integer| Integer::from(x * y),
                 _ => panic!("Unknown operator!"),
             };
         let operation_arg = op_split
             .next()
             .expect("Expected to get an operation argument!")
             .to_owned();
-        let operation = Box::new(move |x: &BigUint| -> BigUint {
+        let operation = Box::new(move |x: &Integer| -> Integer {
             if operation_arg == "old" {
                 return operator(x, x);
             }
-            let arg = BigUint::from_str(&operation_arg).expect("Parsing the big uint has failed!");
+            let arg = Integer::from_str(&operation_arg).expect("Parsing the big int has failed!");
             return operator(&x, &arg);
         });
 
-        let divisor = BigUint::from_str(&split.next().expect("Expected to get a divisor!")[19..]).expect("Parsing the big uint has failed!");
+        let divisor = u32::from_str(&split.next().expect("Expected to get a divisor!")[19..])
+            .expect("Parsing the divisor has failed!");
         let true_id = split
             .next()
             .expect("Expected to get Monkey Id for a true case")[25..]
@@ -52,9 +52,8 @@ impl FromStr for Monkey {
             .next()
             .expect("Expected to get Monkey Id for a false case")[26..]
             .parse::<i32>()?;
-        let test = Box::new(move |x: &BigUint| {
-            let divisor = divisor.clone();
-            if x % divisor ==  BigUint::zero() {
+        let test = Box::new(move |x: &Integer| {
+            if x.is_divisible_u(divisor) {
                 return true_id;
             }
             false_id
@@ -97,13 +96,13 @@ fn main() -> io::Result<()> {
     }
 
     let monkey_ids: Vec<i32> = monkeys.keys().map(|x| x.clone()).collect();
-    for _ in 0..10000 {
+    for _ in 0..20 {
         for id in &monkey_ids {
-            let mut moved_items = HashMap::<i32, Vec<BigUint>>::new();
+            let mut moved_items = HashMap::<i32, Vec<Integer>>::new();
             {
                 let monkey = monkeys.get_mut(id).unwrap();
                 for item in &monkey.items {
-                    let worry_level: BigUint = (monkey.operation)(item);
+                    let worry_level: Integer = (monkey.operation)(item) / 3;
                     let pass_to_monkey = (monkey.test)(&worry_level);
                     moved_items
                         .entry(pass_to_monkey)
