@@ -1,65 +1,58 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::error;
 use std::io::{BufRead, BufReader};
-use std::ops::{Add, Mul};
+use std::ops::{Add, Mul, Rem};
 use std::str::FromStr;
 use std::{fs::File, io};
 
+// base value that contains all the common divisors from the input
+const BASE_VALUE: u64 = 2 * 3 * 5 * 7 * 9 * 11 * 13 * 17 * 19;
+
 #[derive(Clone)]
-struct Composite {
-    primes: Vec<u128>,
+struct WorryLevel {
+    value: u64,
 }
 
-impl From<u128> for Composite {
-    fn from(v: u128) -> Self {
-        let mut divisor = 2;
-        let mut dividend = v;
-        let mut primes = vec![];
-        while dividend > 1 {
-            if dividend % divisor == 0 {
-                dividend /= divisor;
-                primes.push(divisor);
-            } else {
-                if divisor >= 3 {
-                    divisor += 2;
-                } else {
-                    divisor += 1;
-                }
-            }
+impl From<u64> for WorryLevel {
+    fn from(u: u64) -> Self {
+        Self {
+            value: u % BASE_VALUE,
         }
-        Self { primes }
     }
 }
 
-impl Composite {
-    // assumes that a divisor is a prime number
-    fn is_divisible(&self, prime: u128) -> bool {
-        self.primes.contains(&prime)
-    }
-}
-
-impl Add for Composite {
-    type Output = Composite;
+impl Add for WorryLevel {
+    type Output = WorryLevel;
 
     fn add(self, rhs: Self) -> Self::Output {
-        self.primes rhs.primes
+        Self {
+            value: (self.value + rhs.value) % BASE_VALUE,
+        }
     }
 }
 
-impl Mul for Composite {
-    type Output = Composite;
+impl Mul for WorryLevel {
+    type Output = WorryLevel;
 
     fn mul(self, rhs: Self) -> Self::Output {
         Self {
-            primes: &self.primes | &rhs.primes,
+            value: (self.value * rhs.value) % BASE_VALUE,
         }
+    }
+}
+
+impl Rem<u64> for WorryLevel {
+    type Output = u64;
+
+    fn rem(self, rhs: u64) -> Self::Output {
+        self.value % rhs
     }
 }
 
 struct Monkey {
-    items: VecDeque<Composite>,
-    operation: Box<dyn Fn(Composite) -> Composite>,
-    test: Box<dyn Fn(&Composite) -> i32>,
+    items: VecDeque<WorryLevel>,
+    operation: Box<dyn Fn(WorryLevel) -> WorryLevel>,
+    test: Box<dyn Fn(WorryLevel) -> i32>,
     inspected_counter: u64,
 }
 
@@ -69,35 +62,35 @@ impl FromStr for Monkey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut split = s.split(";");
 
-        let items: VecDeque<Composite> = split.next().expect("Expected items list!")[16..]
+        let items: VecDeque<WorryLevel> = split.next().expect("Expected items list!")[16..]
             .split(", ")
-            .map(|item| Composite::from(item.parse::<u128>().expect("Couldn't parse single item")))
+            .map(|item| WorryLevel::from(item.parse::<u64>().expect("Couldn't parse single item")))
             .collect();
 
         let mut op_split = split.next().expect("Wrong operation format!")[21..].split(" ");
-        let operator: fn(Composite, Composite) -> Composite =
+        let operator: fn(WorryLevel, WorryLevel) -> WorryLevel =
             match op_split.next().expect("Expected to get an operator!") {
-                "+" => |x: Composite, y: Composite| x + y,
-                "*" => |x: Composite, y: Composite| x * y,
+                "+" => |x: WorryLevel, y: WorryLevel| x + y,
+                "*" => |x: WorryLevel, y: WorryLevel| x * y,
                 _ => panic!("Unknown operator!"),
             };
         let operation_arg = op_split
             .next()
             .expect("Expected to get an operation argument!")
             .to_owned();
-        let operation = Box::new(move |x: Composite| -> Composite {
+        let operation = Box::new(move |x: WorryLevel| -> WorryLevel {
             if operation_arg == "old" {
                 return operator(x.clone(), x);
             }
-            let arg = Composite::from(
+            let arg = WorryLevel::from(
                 operation_arg
-                    .parse::<u128>()
+                    .parse::<u64>()
                     .expect("Parsing the big int has failed!"),
             );
             return operator(x, arg);
         });
 
-        let divisor = u128::from_str(&split.next().expect("Expected to get a divisor!")[19..])
+        let divisor = u64::from_str(&split.next().expect("Expected to get a divisor!")[19..])
             .expect("Parsing the divisor has failed!");
         let true_id = split
             .next()
@@ -107,8 +100,8 @@ impl FromStr for Monkey {
             .next()
             .expect("Expected to get Monkey Id for a false case")[26..]
             .parse::<i32>()?;
-        let test = Box::new(move |x: &Composite| {
-            if x.is_divisible(divisor) {
+        let test = Box::new(move |x: WorryLevel| {
+            if x % divisor == 0 {
                 return true_id;
             }
             false_id
@@ -153,12 +146,12 @@ fn main() -> io::Result<()> {
     let monkey_ids: Vec<i32> = monkeys.keys().map(|x| x.clone()).collect();
     for _ in 0..10000 {
         for id in &monkey_ids {
-            let mut moved_items = HashMap::<i32, VecDeque<Composite>>::new();
+            let mut moved_items = HashMap::<i32, VecDeque<WorryLevel>>::new();
             {
                 let monkey = monkeys.get_mut(id).unwrap();
                 while let Some(item) = monkey.items.pop_front() {
                     let worry_level = (monkey.operation)(item);
-                    let pass_to_monkey = (monkey.test)(&worry_level);
+                    let pass_to_monkey = (monkey.test)(worry_level.clone());
                     moved_items
                         .entry(pass_to_monkey)
                         .or_default()
