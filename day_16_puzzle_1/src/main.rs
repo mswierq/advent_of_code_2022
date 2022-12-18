@@ -1,5 +1,5 @@
 use regex::Regex;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::{fs::File, io};
@@ -39,10 +39,10 @@ enum Action {
 
 fn find_max_pressure(valves: HashMap<ValveId, Valve>) -> i32 {
     let mut queue = VecDeque::new();
-    let mut is_open: HashMap<_, _> = valves
-        .keys()
-        .map(|id| (id.clone(), valves.get(id).unwrap().flow == 0))
-        .collect();
+    let mut closed_valves: BTreeMap<_, _> = valves.iter().map(|id, valve| {
+        (valve.flow, id.clone())
+    }).collect();
+
     for id in &valves.get("AA").unwrap().tunnels {
         queue.push_back((
             Action::Move { id: id.clone() },
